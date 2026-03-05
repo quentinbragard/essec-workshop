@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const PRESET_COMPANIES = [
   { name: "NovaTech Industries", flag: "🏭", industry: "Mid-size European B2B manufacturer (food & packaging)", revenue: "~350M EUR — 1,200 employees — 3 countries", stack: "SAP · Microsoft 365 + Copilot · Salesforce · Power BI", aiStatus: "No formal AI strategy. Some employees use ChatGPT informally.", problems: ["Sales: Slow response to RFPs, inconsistent proposals", "Customer Service: High volume of repetitive delivery queries", "HR: Manual onboarding, policy questions", "Finance: Manual reporting, time-consuming consolidation", "Operations: Quality control issues, supply chain delays"] },
@@ -83,11 +83,29 @@ const TagBox = ({ selected, onChange, presets }) => {
   );
 };
 
-const Stars = ({ value = 0, onChange, size = 22 }) => (
-  <div style={{ display: "flex", gap: 2 }}>
-    {[1, 2, 3, 4, 5].map(n => <span key={n} onClick={() => onChange?.(n)} style={{ fontSize: size, cursor: onChange ? "pointer" : "default", color: n <= value ? "#f0a500" : "#ddd6c8", transition: "color .1s", lineHeight: 1 }}>★</span>)}
-  </div>
-);
+const GradeSlider = ({ value = 0, onChange, compact = false }) => {
+  const v = value || 0;
+  const color = v >= 14 ? "#2e7d32" : v >= 10 ? "#b8920a" : v >= 6 ? "#e65100" : "#c05050";
+  const bg = v >= 14 ? "#e8f5e9" : v >= 10 ? "#fdf8ef" : v >= 6 ? "#fff3e0" : "#fff0f0";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: compact ? 10 : 14 }}>
+      <div style={{ background: bg, border: `2px solid ${color}`, borderRadius: 10, minWidth: compact ? 42 : 52, height: compact ? 42 : 52, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans',sans-serif", fontSize: compact ? 18 : 24, fontWeight: 700, color }}>
+        {v}
+      </div>
+      {onChange ? (
+        <div style={{ flex: 1, minWidth: compact ? 100 : 140 }}>
+          <input type="range" min={0} max={20} step={1} value={v} onChange={e => onChange(Number(e.target.value))}
+            style={{ width: "100%", accentColor: color, cursor: "pointer", height: 6 }} />
+          <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "'DM Sans',sans-serif", fontSize: 10, color: "#9a8a70", marginTop: 2 }}>
+            <span>0</span><span>20</span>
+          </div>
+        </div>
+      ) : (
+        <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: compact ? 12 : 13, color: "#9a8a70" }}>/20</span>
+      )}
+    </div>
+  );
+};
 
 // ── Shared slide renderer ────────────────────────────────────────────────────
 function Slides({ data }) {
@@ -173,22 +191,84 @@ function Slides({ data }) {
 }
 
 // ── Main app ─────────────────────────────────────────────────────────────────
+const STORAGE_KEY = "essec-workshop";
+const loadSaved = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; } };
+
 export default function App() {
-  const [screen, setScreen] = useState("home"); // home | edit | present | leaderboard | view
-  const [step, setStep] = useState(0);
-  const [teamName, setTeamName] = useState("");
+  const saved = useRef(loadSaved()).current;
+  const [screen, setScreen] = useState(saved ? "edit" : "home");
+  const [step, setStep] = useState(saved?.step || 0);
+  const [teamName, setTeamName] = useState(saved?.teamName || "");
+  const [password, setPassword] = useState(saved?.password || "");
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
-  const [company, setCompany] = useState({ name: "", flag: "🏢", industry: "", revenue: "", stack: "", aiStatus: "", problems: ["", "", "", "", ""], preset: "" });
-  const [strategy, setStrategy] = useState({ vision: "", governance: "", dataPolicy: "", roadmap: "", priorities: [] });
-  const [opportunities, setOpportunities] = useState([emptyOpp(), emptyOpp(), emptyOpp()]);
-  const [pocs, setPocs] = useState([emptyPOC()]);
+  const [company, setCompany] = useState(saved?.company || { name: "", flag: "🏢", industry: "", revenue: "", stack: "", aiStatus: "", problems: ["", "", "", "", ""], preset: "" });
+  const [strategy, setStrategy] = useState(saved?.strategy || { vision: "", governance: "", dataPolicy: "", roadmap: "", priorities: [] });
+  const [opportunities, setOpportunities] = useState(saved?.opportunities || [emptyOpp(), emptyOpp(), emptyOpp()]);
+  const [pocs, setPocs] = useState(saved?.pocs || [emptyPOC()]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [lbLoading, setLbLoading] = useState(false);
   const [myVotes, setMyVotes] = useState({});
   const [viewing, setViewing] = useState(null);
+  const [homeMode, setHomeMode] = useState("create");
+  const [homeError, setHomeError] = useState("");
+  const [homeLoading, setHomeLoading] = useState(false);
 
-  const allData = { teamName, company, strategy, opportunities, pocs };
+  const allData = { teamName, company, strategy, opportunities, pocs, password };
+
+  // Auto-save to localStorage whenever workshop data changes
+  useEffect(() => {
+    if (!teamName) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ teamName, password, company, strategy, opportunities, pocs, step }));
+  }, [teamName, password, company, strategy, opportunities, pocs, step]);
+
+  const resetState = () => {
+    setStep(0); setTeamName(""); setPassword("");
+    setCompany({ name: "", flag: "🏢", industry: "", revenue: "", stack: "", aiStatus: "", problems: ["", "", "", "", ""], preset: "" });
+    setStrategy({ vision: "", governance: "", dataPolicy: "", roadmap: "", priorities: [] });
+    setOpportunities([emptyOpp(), emptyOpp(), emptyOpp()]);
+    setPocs([emptyPOC()]);
+  };
+
+  const handleExit = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    resetState();
+    setScreen("home");
+  };
+
+  const handleCreate = async () => {
+    const name = teamName.trim();
+    if (!name || !password.trim()) return;
+    setHomeLoading(true); setHomeError("");
+    const teams = await listTeams();
+    if (teams.some(t => t.teamName === name)) {
+      setHomeError("This team name is already taken. Try joining instead.");
+      setHomeLoading(false); return;
+    }
+    await saveTeam(name, allData);
+    setHomeLoading(false); setScreen("edit");
+  };
+
+  const handleJoin = async () => {
+    const name = teamName.trim();
+    if (!name || !password.trim()) return;
+    setHomeLoading(true); setHomeError("");
+    const teams = await listTeams();
+    const team = teams.find(t => t.teamName === name);
+    if (!team) {
+      setHomeError("Team not found. Check the name or create a new team.");
+      setHomeLoading(false); return;
+    }
+    if (team.password !== password) {
+      setHomeError("Wrong password.");
+      setHomeLoading(false); return;
+    }
+    setCompany(team.company || { name: "", flag: "🏢", industry: "", revenue: "", stack: "", aiStatus: "", problems: ["", "", "", "", ""], preset: "" });
+    setStrategy(team.strategy || { vision: "", governance: "", dataPolicy: "", roadmap: "", priorities: [] });
+    setOpportunities(team.opportunities || [emptyOpp(), emptyOpp(), emptyOpp()]);
+    setPocs(team.pocs || [emptyPOC()]);
+    setHomeLoading(false); setScreen("edit");
+  };
 
   const handleSave = async () => {
     if (!teamName.trim()) return;
@@ -230,6 +310,7 @@ export default function App() {
   const B = (v = "primary") => ({ ...DM, fontSize: 13, fontWeight: 500, padding: "10px 20px", borderRadius: 8, border: "none", cursor: "pointer", transition: "all .18s", ...(v === "primary" ? { background: "#1c2b4a", color: "#fff" } : v === "gold" ? { background: "#b8920a", color: "#fff" } : v === "ghost" ? { background: "transparent", border: "1.5px solid #ddd6c8", color: "#6a6050" } : { background: "#fff0f0", border: "1.5px solid #f0c0c0", color: "#c05050", fontSize: 11, padding: "4px 10px" }) });
 
   /* HOME */
+  const canSubmitHome = teamName.trim() && password.trim() && !homeLoading;
   if (screen === "home") return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#f5f2eb,#ece6d8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600&display=swap');*{box-sizing:border-box}body{margin:0}input:focus,textarea:focus{border-color:#b8920a!important;box-shadow:0 0 0 3px rgba(184,146,10,.1)}`}</style>
@@ -237,15 +318,30 @@ export default function App() {
         <div style={{ fontSize: 52, marginBottom: 10 }}>🎓</div>
         <h1 style={{ ...S, fontSize: 34, color: "#1c2b4a", margin: "0 0 6px", fontWeight: 700 }}>AI Audit Workshop</h1>
         <p style={{ ...DM, color: "#9a8a70", fontSize: 14, margin: "0 0 40px" }}>ESSEC — Generative AI in Enterprises</p>
-        <div style={{ ...card, marginBottom: 18 }}>
-          <label style={lbl}>Your Team Name</label>
-          <input value={teamName} onChange={e => setTeamName(e.target.value)} onKeyDown={e => e.key === "Enter" && teamName.trim() && setScreen("edit")} placeholder="e.g. Team Alpha, Les Stratèges…" style={{ ...inp, width: "100%" }} autoFocus />
+        <div style={{ ...card, marginBottom: 18, textAlign: "left" }}>
+          {/* Create / Join tabs */}
+          <div style={{ display: "flex", gap: 0, marginBottom: 18 }}>
+            {[["create", "🚀 Create Team"], ["join", "🔑 Join Team"]].map(([mode, label]) => (
+              <button key={mode} onClick={() => { setHomeMode(mode); setHomeError(""); }} style={{ ...DM, flex: 1, fontSize: 13, fontWeight: 500, padding: "10px 0", border: "none", borderBottom: `2.5px solid ${homeMode === mode ? "#b8920a" : "#e8e0d0"}`, background: "none", color: homeMode === mode ? "#1c2b4a" : "#9a8a70", cursor: "pointer", transition: "all .15s" }}>{label}</button>
+            ))}
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={lbl}>Team Name</label>
+            <input value={teamName} onChange={e => { setTeamName(e.target.value); setHomeError(""); }} placeholder="e.g. Team Alpha, Les Stratèges…" style={{ ...inp, width: "100%" }} autoFocus />
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            <label style={lbl}>Password</label>
+            <input type="password" value={password} onChange={e => { setPassword(e.target.value); setHomeError(""); }} onKeyDown={e => e.key === "Enter" && canSubmitHome && (homeMode === "create" ? handleCreate() : handleJoin())} placeholder={homeMode === "create" ? "Choose a team password" : "Enter your team password"} style={{ ...inp, width: "100%" }} />
+          </div>
+          {homeError && <div style={{ ...DM, fontSize: 12, color: "#c05050", background: "#fff0f0", border: "1px solid #f0c0c0", borderRadius: 6, padding: "8px 12px", marginTop: 12 }}>{homeError}</div>}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <button style={{ ...B("primary"), padding: 14, fontSize: 15, borderRadius: 10, opacity: teamName.trim() ? 1 : .4 }} disabled={!teamName.trim()} onClick={() => setScreen("edit")}>🚀 Start the Workshop</button>
+          <button style={{ ...B(homeMode === "create" ? "primary" : "gold"), padding: 14, fontSize: 15, borderRadius: 10, opacity: canSubmitHome ? 1 : .4 }} disabled={!canSubmitHome} onClick={homeMode === "create" ? handleCreate : handleJoin}>
+            {homeLoading ? "Loading…" : homeMode === "create" ? "🚀 Create & Start" : "🔑 Join Team"}
+          </button>
           <button style={{ ...B("ghost"), padding: 12, borderRadius: 10 }} onClick={openLeaderboard}>🏆 View Live Leaderboard</button>
         </div>
-        <p style={{ ...DM, fontSize: 11, color: "#b0a88a", marginTop: 20 }}>Your work auto-saves to a shared leaderboard so classmates can rate your strategy.</p>
+        <p style={{ ...DM, fontSize: 11, color: "#b0a88a", marginTop: 20 }}>{homeMode === "create" ? "Choose a password so your team can rejoin later." : "Enter your team name and password to pick up where you left off."}</p>
       </div>
     </div>
   );
@@ -259,12 +355,15 @@ export default function App() {
         <div style={{ background: "#1c2b4a", padding: "14px 28px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ ...S, fontSize: 20, color: "#f5f2eb", fontWeight: 700 }}>🏆 Live Leaderboard</div>
           <div style={{ display: "flex", gap: 10 }}>
-            {teamName && <button style={{ ...B("gold"), padding: "8px 16px", fontSize: 12 }} onClick={() => setScreen("edit")}>← My Workshop</button>}
-            <button style={{ ...B("ghost"), borderColor: "rgba(255,255,255,.3)", color: "#e8e0d0", padding: "8px 16px", fontSize: 12 }} onClick={() => setScreen("home")}>Home</button>
+            {teamName ? (
+              <button style={{ ...B("gold"), padding: "8px 16px", fontSize: 12 }} onClick={() => setScreen("edit")}>← My Workshop</button>
+            ) : (
+              <button style={{ ...B("ghost"), borderColor: "rgba(255,255,255,.3)", color: "#e8e0d0", padding: "8px 16px", fontSize: 12 }} onClick={() => setScreen("home")}>Home</button>
+            )}
           </div>
         </div>
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 24px" }}>
-          {teamName && <div style={{ ...DM, fontSize: 13, color: "#9a8a70", textAlign: "center", marginBottom: 24 }}>You are <strong style={{ color: "#1c2b4a" }}>{teamName}</strong> — rate other teams (★ to ★★★★★)</div>}
+          {teamName && <div style={{ ...DM, fontSize: 13, color: "#9a8a70", textAlign: "center", marginBottom: 24 }}>You are <strong style={{ color: "#1c2b4a" }}>{teamName}</strong> — grade other teams (0 to 20)</div>}
           {lbLoading && <div style={{ textAlign: "center", padding: 60, ...DM, color: "#9a8a70" }}>Loading…</div>}
           {!lbLoading && leaderboard.length === 0 && (
             <div style={{ ...card, textAlign: "center", padding: 60 }}>
@@ -280,15 +379,15 @@ export default function App() {
                 <div style={{ ...S, fontSize: 18, color: "#1c2b4a", marginBottom: 2 }}>{t.teamName}</div>
                 <div style={{ ...DM, fontSize: 12, color: "#9a8a70", marginBottom: 6 }}>{t.company?.name || "—"}{t.company?.industry ? " · " + t.company.industry.slice(0, 45) + "…" : ""}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Stars value={Math.round(t.avg)} size={17} />
-                  <span style={{ ...DM, fontSize: 12, color: "#9a8a70" }}>{t.avg > 0 ? `${t.avg.toFixed(1)}/5` : "No votes"}{t.voteCount > 0 ? ` (${t.voteCount} vote${t.voteCount > 1 ? "s" : ""})` : ""}</span>
+                  <GradeSlider value={Math.round(t.avg)} compact />
+                  <span style={{ ...DM, fontSize: 12, color: "#9a8a70" }}>{t.avg > 0 ? `${t.avg.toFixed(1)}/20` : "No votes"}{t.voteCount > 0 ? ` (${t.voteCount} vote${t.voteCount > 1 ? "s" : ""})` : ""}</span>
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                 {teamName && teamName !== t.teamName && (
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ ...DM, fontSize: 11, color: "#9a8a70", marginBottom: 4 }}>{myVotes[t.teamName] ? `Your vote: ${myVotes[t.teamName]}/5` : "Your rating:"}</div>
-                    <Stars value={myVotes[t.teamName] || 0} onChange={s => handleVote(t.teamName, s)} size={26} />
+                  <div>
+                    <div style={{ ...DM, fontSize: 11, color: "#9a8a70", marginBottom: 6 }}>{myVotes[t.teamName] != null ? `Your grade: ${myVotes[t.teamName]}/20` : "Your grade:"}</div>
+                    <GradeSlider value={myVotes[t.teamName] || 0} onChange={s => handleVote(t.teamName, s)} compact />
                   </div>
                 )}
                 <button style={{ ...B("ghost"), fontSize: 12, padding: "6px 14px" }} onClick={() => { setViewing(t); setScreen("view"); }}>View Slides →</button>
@@ -314,12 +413,12 @@ export default function App() {
       <div style={{ maxWidth: 820, margin: "0 auto", padding: "32px 24px" }}>
         <Slides data={viewing} />
         {teamName && teamName !== viewing.teamName && (
-          <div style={{ ...goldCard, marginTop: 20, textAlign: "center" }}>
-            <div style={{ ...DM, fontSize: 13, color: "#6a5010", marginBottom: 10 }}>Rate this team's work</div>
-            <div style={{ display: "flex", justifyContent: "center" }}>
-              <Stars value={myVotes[viewing.teamName] || 0} onChange={s => handleVote(viewing.teamName, s)} size={38} />
+          <div style={{ ...goldCard, marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+            <div style={{ ...DM, fontSize: 13, color: "#6a5010" }}>Grade this team's work</div>
+            <div style={{ width: "100%", maxWidth: 320 }}>
+              <GradeSlider value={myVotes[viewing.teamName] || 0} onChange={s => handleVote(viewing.teamName, s)} />
             </div>
-            {myVotes[viewing.teamName] && <div style={{ ...DM, fontSize: 12, color: "#9a8a70", marginTop: 8 }}>You gave {myVotes[viewing.teamName]}/5 ⭐</div>}
+            {myVotes[viewing.teamName] != null && <div style={{ ...DM, fontSize: 12, color: "#9a8a70" }}>You gave {myVotes[viewing.teamName]}/20</div>}
           </div>
         )}
       </div>
@@ -354,6 +453,7 @@ export default function App() {
           <button style={{ ...B("primary"), fontSize: 12, padding: "6px 12px", opacity: saving ? .6 : 1 }} onClick={handleSave} disabled={saving || !teamName}>
             {saving ? "Saving…" : savedOk ? "✅ Saved!" : "💾 Save & Share"}
           </button>
+          <button style={{ ...B("danger"), fontSize: 11, padding: "5px 10px" }} onClick={() => { if (window.confirm("Exit the workshop? You can rejoin with your team name and password.")) handleExit(); }}>Exit</button>
         </div>
       </div>
 
