@@ -83,26 +83,36 @@ const TagBox = ({ selected, onChange, presets }) => {
   );
 };
 
-const GradeSlider = ({ value = 0, onChange, compact = false }) => {
+const GradeBadge = ({ value }) => {
   const v = value || 0;
   const color = v >= 14 ? "#2e7d32" : v >= 10 ? "#b8920a" : v >= 6 ? "#e65100" : "#c05050";
   const bg = v >= 14 ? "#e8f5e9" : v >= 10 ? "#fdf8ef" : v >= 6 ? "#fff3e0" : "#fff0f0";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: compact ? 10 : 14 }}>
-      <div style={{ background: bg, border: `2px solid ${color}`, borderRadius: 10, minWidth: compact ? 42 : 52, height: compact ? 42 : 52, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans',sans-serif", fontSize: compact ? 18 : 24, fontWeight: 700, color }}>
-        {v}
-      </div>
-      {onChange ? (
-        <div style={{ flex: 1, minWidth: compact ? 100 : 140 }}>
-          <input type="range" min={0} max={20} step={1} value={v} onChange={e => onChange(Number(e.target.value))}
-            style={{ width: "100%", accentColor: color, cursor: "pointer", height: 6 }} />
-          <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "'DM Sans',sans-serif", fontSize: 10, color: "#9a8a70", marginTop: 2 }}>
-            <span>0</span><span>20</span>
-          </div>
-        </div>
-      ) : (
-        <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: compact ? 12 : 13, color: "#9a8a70" }}>/20</span>
-      )}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, background: bg, border: `1.5px solid ${color}`, borderRadius: 7, padding: "3px 9px", fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 700, color }}>{v}<span style={{ fontSize: 11, fontWeight: 400, color: "#9a8a70" }}>/20</span></span>
+  );
+};
+
+const GradeInput = ({ currentGrade, onSubmit }) => {
+  const [val, setVal] = useState(currentGrade != null ? String(currentGrade) : "");
+  const [submitting, setSubmitting] = useState(false);
+  const parsed = val === "" ? null : parseInt(val, 10);
+  const valid = parsed != null && !isNaN(parsed) && parsed >= 0 && parsed <= 20;
+  const changed = valid && parsed !== currentGrade;
+  const submit = async () => {
+    if (!changed || submitting) return;
+    setSubmitting(true);
+    await onSubmit(parsed);
+    setSubmitting(false);
+  };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <input type="number" min={0} max={20} value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()}
+        style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 600, width: 52, textAlign: "center", padding: "5px 4px", border: "1.5px solid #ddd6c8", borderRadius: 7, background: "#fff", color: "#1c2b4a", outline: "none" }} />
+      <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#9a8a70" }}>/20</span>
+      <button onClick={submit} disabled={!changed || submitting}
+        style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 500, padding: "5px 10px", borderRadius: 6, border: "none", cursor: changed && !submitting ? "pointer" : "default", background: changed ? "#b8920a" : "#e8e0d0", color: changed ? "#fff" : "#9a8a70", transition: "all .15s" }}>
+        {submitting ? "…" : currentGrade != null ? "Update" : "Vote"}
+      </button>
     </div>
   );
 };
@@ -378,16 +388,16 @@ export default function App() {
               <div style={{ flex: 1 }}>
                 <div style={{ ...S, fontSize: 18, color: "#1c2b4a", marginBottom: 2 }}>{t.teamName}</div>
                 <div style={{ ...DM, fontSize: 12, color: "#9a8a70", marginBottom: 6 }}>{t.company?.name || "—"}{t.company?.industry ? " · " + t.company.industry.slice(0, 45) + "…" : ""}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <GradeSlider value={Math.round(t.avg)} compact />
-                  <span style={{ ...DM, fontSize: 12, color: "#9a8a70" }}>{t.avg > 0 ? `${t.avg.toFixed(1)}/20` : "No votes"}{t.voteCount > 0 ? ` (${t.voteCount} vote${t.voteCount > 1 ? "s" : ""})` : ""}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {t.avg > 0 ? <GradeBadge value={Math.round(t.avg)} /> : null}
+                  <span style={{ ...DM, fontSize: 12, color: "#9a8a70" }}>{t.avg > 0 ? `avg ${t.avg.toFixed(1)}` : "No votes yet"}{t.voteCount > 0 ? ` · ${t.voteCount} vote${t.voteCount > 1 ? "s" : ""}` : ""}</span>
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                 {teamName && teamName !== t.teamName && (
                   <div>
-                    <div style={{ ...DM, fontSize: 11, color: "#9a8a70", marginBottom: 6 }}>{myVotes[t.teamName] != null ? `Your grade: ${myVotes[t.teamName]}/20` : "Your grade:"}</div>
-                    <GradeSlider value={myVotes[t.teamName] || 0} onChange={s => handleVote(t.teamName, s)} compact />
+                    <div style={{ ...DM, fontSize: 11, color: "#9a8a70", marginBottom: 6 }}>Your grade:</div>
+                    <GradeInput currentGrade={myVotes[t.teamName] ?? null} onSubmit={s => handleVote(t.teamName, s)} />
                   </div>
                 )}
                 <button style={{ ...B("ghost"), fontSize: 12, padding: "6px 14px" }} onClick={() => { setViewing(t); setScreen("view"); }}>View Slides →</button>
@@ -413,12 +423,9 @@ export default function App() {
       <div style={{ maxWidth: 820, margin: "0 auto", padding: "32px 24px" }}>
         <Slides data={viewing} />
         {teamName && teamName !== viewing.teamName && (
-          <div style={{ ...goldCard, marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-            <div style={{ ...DM, fontSize: 13, color: "#6a5010" }}>Grade this team's work</div>
-            <div style={{ width: "100%", maxWidth: 320 }}>
-              <GradeSlider value={myVotes[viewing.teamName] || 0} onChange={s => handleVote(viewing.teamName, s)} />
-            </div>
-            {myVotes[viewing.teamName] != null && <div style={{ ...DM, fontSize: 12, color: "#9a8a70" }}>You gave {myVotes[viewing.teamName]}/20</div>}
+          <div style={{ ...goldCard, marginTop: 20, display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>
+            <span style={{ ...DM, fontSize: 13, color: "#6a5010" }}>Grade this team:</span>
+            <GradeInput currentGrade={myVotes[viewing.teamName] ?? null} onSubmit={s => handleVote(viewing.teamName, s)} />
           </div>
         )}
       </div>
